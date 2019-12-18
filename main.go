@@ -41,9 +41,10 @@ func serve(config config) {
 		jwksClient: jwksClient,
 		jwkID:      config.jwkID,
 	}
+	cors := corsMiddleware{}
 
 	http.Handle("/validate", auth.validate(emptyHandler{}))
-	http.Handle("/ping", auth.validate(resourceHandler{}))
+	http.Handle("/ping", cors.enable(auth.validate(resourceHandler{})))
 
 	err := http.ListenAndServe(":"+config.httpPort, nil)
 	if err != nil {
@@ -55,7 +56,7 @@ func serve(config config) {
 type resourceHandler struct{}
 
 func (h resourceHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	fmt.Fprintf(w, "[%d] pong", time.Now().Unix())
+	fmt.Fprintf(w, `{"timestamp":%d,"message":"pong"}`, time.Now().Unix())
 }
 
 type emptyHandler struct{}
@@ -90,8 +91,25 @@ func (m authenticationMiddleware) validate(next http.Handler) http.Handler {
 
 		if _, err := jws.Verify(jwk.Key); err != nil {
 			w.WriteHeader(http.StatusUnauthorized)
-			w.Header().Set("Content-Type", "application/json")
+			w.Header().Add("Content-Type", "application/json")
 			fmt.Fprintf(w, `{"error":"%s"}`, err.Error())
+			return
+		}
+
+		next.ServeHTTP(w, r)
+	})
+}
+
+type corsMiddleware struct{}
+
+func (m corsMiddleware) enable(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Add("Access-Control-Allow-Origin", "*")
+		w.Header().Add("Access-Control-Allow-Methods", "DELETE, POST, GET, OPTIONS")
+		w.Header().Add("Access-Control-Allow-Headers", "Content-Type, Access-Control-Allow-Headers, Authorization, X-Requested-With")
+
+		if r.Method == "OPTIONS" {
+			w.WriteHeader(http.StatusOK)
 			return
 		}
 
