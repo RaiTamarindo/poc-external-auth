@@ -3,7 +3,6 @@ package main
 import (
 	"fmt"
 	"log"
-	"math/rand"
 	"net/http"
 	"os"
 	"strings"
@@ -44,7 +43,7 @@ func serve(config config) {
 	}
 
 	http.Handle("/validate", auth.validate(emptyHandler{}))
-	http.Handle("/api-resource", auth.validate(resourceHandler{}))
+	http.Handle("/ping", auth.validate(resourceHandler{}))
 
 	err := http.ListenAndServe(":"+config.httpPort, nil)
 	if err != nil {
@@ -56,9 +55,7 @@ func serve(config config) {
 type resourceHandler struct{}
 
 func (h resourceHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	source := rand.NewSource(time.Now().UnixNano())
-	random := rand.New(source)
-	fmt.Fprintf(w, "This is a secret number: %d", random.Intn(1000000000))
+	fmt.Fprintf(w, "[%d] pong", time.Now().Unix())
 }
 
 type emptyHandler struct{}
