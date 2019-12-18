@@ -1,0 +1,5 @@
+{
+    "apiDomain": "{API_DOMAIN}",
+    "authDomain": "{AUTH_DOMAIN}",
+    "authClientId": "{AUTH_CLIENT_ID}",
+}

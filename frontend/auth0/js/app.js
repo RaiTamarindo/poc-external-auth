@@ -39,18 +39,30 @@ const logout = () => {
 /**
  * Retrieves the auth configuration from the server
  */
-const fetchAuthConfig = () => fetch("/auth_config.json");
+const fetchAuthConfig = async () => {
+  const response = await fetch("/auth_config.json");
+  return response.json();
+}
+
+let _config = null;
+const getConfig = async () => {
+  if (!_config) {
+    _config = await fetchAuthConfig();
+  }
+
+  return _config;
+}
 
 /**
  * Initializes the Auth0 client
  */
 const configureClient = async () => {
-  const response = await fetchAuthConfig();
-  const config = await response.json();
+  const config = await getConfig();
 
   auth0 = await createAuth0Client({
     domain: config.domain,
-    client_id: config.clientId
+    client_id: config.clientId,
+    audience: config.audience
   });
 };
 
@@ -67,6 +79,33 @@ const requireAuth = async (fn, targetUrl) => {
   }
 
   return login(targetUrl);
+};
+
+/**
+ * Calls the API endpoint with an authorization token
+ */
+const callApi = async () => {
+  try {
+    const config = await getConfig();
+    const token = await auth0.getTokenSilently();
+
+    const response = await fetch(`${config.audience}/ping`, {
+      headers: {
+        Authorization: `Bearer ${token}`
+      }
+    });
+
+    const responseData = await response.json();
+    const responseElement = document.getElementById("api-call-result");
+
+    responseElement.innerText = JSON.stringify(responseData, {}, 2);
+
+    document.querySelectorAll("pre code").forEach(hljs.highlightBlock);
+
+    eachElement(".result-block", (c) => c.classList.add("show"));
+  } catch (e) {
+    console.error(e);
+  }
 };
 
 // Will run when page finishes loading
@@ -90,6 +129,9 @@ window.onload = async () => {
         e.preventDefault();
         window.history.pushState({ url }, {}, url);
       }
+    } else if (e.target.getAttribute("id") === "call-api") {
+      e.preventDefault();
+      callApi();
     }
   });
 
