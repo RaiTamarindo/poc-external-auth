@@ -1,0 +1,14 @@
+version: "3"
+services:
+  backend:
+    build: .
+    environment:
+      - HTTP_PORT=${API_PORT}
+      - JWKS_URI=${JWKS_URI}
+      - JWK_ID=${JWK_ID}
+    ports:
+      - ${API_PORT}:${API_PORT}
+  frontend:
+    build: frontend/${AUTH_PROVIDER}
+    ports:
+      - ${WEB_PORT}:80
