@@ -1,0 +1,13 @@
+{
+    "identityPool": "us-east-1:XXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
+    "region": "us-east-1",
+    "poolId": "us-east-1_XXXXXXXX",
+    "endpoint": "https://XXXXXXXXXXX.execute-api.us-east-1.amazonaws.com/prod",
+    "authData": {
+        "ClientId": "XXXXXXXXXXXXXXXXX",
+        "AppWebDomain": "XXXXXX.auth.us-east-1.amazoncognito.com",
+        "TokenScopesArray": ["openid"],
+        "RedirectUriSignIn": "http://localhost:3000",
+        "RedirectUriSignOut": "http://localhost:3000"
+    }
+}
