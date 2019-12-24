@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"os"
@@ -13,17 +14,25 @@ import (
 )
 
 type config struct {
-	httpPort string
-	jwksURI  string
-	jwkID    string
+	httpPort                 string
+	httpEndpoint             string
+	jwksURI                  string
+	jwkID                    string
+	authProviderDomain       string
+	authProviderClientID     string
+	authProviderClientSecret string
 }
 
 func main() {
 
 	config := config{
-		httpPort: os.Getenv("HTTP_PORT"),
-		jwksURI:  os.Getenv("JWKS_URI"),
-		jwkID:    os.Getenv("JWK_ID"),
+		httpPort:                 os.Getenv("HTTP_PORT"),
+		httpEndpoint:             os.Getenv("HTTP_ENDPOINT"),
+		jwksURI:                  os.Getenv("JWKS_URI"),
+		jwkID:                    os.Getenv("JWK_ID"),
+		authProviderDomain:       os.Getenv("AUTH_PROVIDER_DOMAIN"),
+		authProviderClientID:     os.Getenv("AUTH_PROVIDER_CLIENT_ID"),
+		authProviderClientSecret: os.Getenv("AUTH_PROVIDER_CLIENT_SECRET"),
 	}
 
 	serve(config)
@@ -44,7 +53,52 @@ func serve(config config) {
 	cors := corsMiddleware{}
 
 	http.Handle("/validate", auth.validate(emptyHandler{}))
-	http.Handle("/ping", cors.enable(auth.validate(resourceHandler{})))
+	http.Handle("/ping", cors.enable(auth.validate(pingHandler{})))
+	http.HandleFunc("/login", func(w http.ResponseWriter, r *http.Request) {
+		authHeader := r.Header.Get("Authorization")
+		if len(authHeader) < 7 || strings.ToLower(authHeader[:7]) != "bearer " {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		credentials := strings.Split(authHeader[7:], ":")
+
+		url := fmt.Sprintf("https://%s/oauth/token", config.authProviderDomain)
+		params := []string{
+			"grant_type=password",
+			"scope=read%3Asample",
+			fmt.Sprintf("username=%s", credentials[0]),
+			fmt.Sprintf("password=%s", credentials[1]),
+			fmt.Sprintf("audience=%s:%s", config.httpEndpoint, config.httpPort),
+			fmt.Sprintf("client_id=%s", config.authProviderClientID),
+			fmt.Sprintf("client_secret=%s", config.authProviderClientSecret),
+		}
+		payload := strings.NewReader(strings.Join(params, "&"))
+		req, err := http.NewRequest("POST", url, payload)
+		if err != nil {
+			log.Println(err.Error())
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+
+		req.Header.Add("content-type", "application/x-www-form-urlencoded")
+
+		res, err := http.DefaultClient.Do(req)
+		if err != nil {
+			log.Println(err.Error())
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+
+		w.Header().Add("Content-Type", "application/json")
+		written, err := io.Copy(w, res.Body)
+		if err != nil {
+			log.Println(err.Error())
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+
+		log.Printf("written %d bytes to response", written)
+	})
 
 	err := http.ListenAndServe(":"+config.httpPort, nil)
 	if err != nil {
@@ -53,9 +107,9 @@ func serve(config config) {
 
 }
 
-type resourceHandler struct{}
+type pingHandler struct{}
 
-func (h resourceHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+func (h pingHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintf(w, `{"timestamp":%d,"message":"pong"}`, time.Now().Unix())
 }
 

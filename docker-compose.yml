@@ -4,8 +4,12 @@ services:
     build: .
     environment:
       - HTTP_PORT=${API_PORT}
+      - HTTP_ENDPOINT=${API_ENDPOINT}
       - JWKS_URI=${JWKS_URI}
       - JWK_ID=${JWK_ID}
+      - AUTH_PROVIDER_DOMAIN=${AUTH_PROVIDER_DOMAIN}
+      - AUTH_PROVIDER_CLIENT_ID=${AUTH_PROVIDER_CLIENT_ID}
+      - AUTH_PROVIDER_CLIENT_SECRET=${AUTH_PROVIDER_CLIENT_SECRET}
     ports:
       - ${API_PORT}:${API_PORT}
   frontend:
