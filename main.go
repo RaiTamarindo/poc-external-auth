@@ -17,10 +17,11 @@ import (
 type config struct {
 	httpPort                 string
 	httpEndpoint             string
-	jwksURI                  string
+	authProvider             string
 	authProviderDomain       string
 	authProviderClientID     string
 	authProviderClientSecret string
+	jwksURI                  string
 }
 
 func main() {
@@ -28,10 +29,11 @@ func main() {
 	config := config{
 		httpPort:                 os.Getenv("HTTP_PORT"),
 		httpEndpoint:             os.Getenv("HTTP_ENDPOINT"),
-		jwksURI:                  os.Getenv("JWKS_URI"),
+		authProvider:             os.Getenv("AUTH_PROVIDER"),
 		authProviderDomain:       os.Getenv("AUTH_PROVIDER_DOMAIN"),
 		authProviderClientID:     os.Getenv("AUTH_PROVIDER_CLIENT_ID"),
 		authProviderClientSecret: os.Getenv("AUTH_PROVIDER_CLIENT_SECRET"),
+		jwksURI:                  os.Getenv("JWKS_URI"),
 	}
 
 	serve(config)
@@ -53,14 +55,25 @@ func serve(config config) {
 		log.Fatalf("got any key from jwks source %s", config.jwksURI)
 	}
 
-	auth := authenticationMiddleware{
+	var authService authService
+	switch config.authProvider {
+	case "auth0":
+		authService = auth0{
+			domain:       config.authProviderDomain,
+			clientID:     config.authProviderClientID,
+			clientSecret: config.authProviderClientSecret,
+			audience:     fmt.Sprintf("%s:%s", config.httpEndpoint, config.httpPort),
+		}
+	}
+
+	authMiddleware := authenticationMiddleware{
 		jwksClient: jwksClient,
 		jwkID:      jwks.Keys[0].KeyID,
 	}
 	cors := corsMiddleware{}
 
-	http.Handle("/validate", auth.validate(emptyHandler{}))
-	http.Handle("/ping", cors.enable(auth.validate(pingHandler{})))
+	http.Handle("/validate", authMiddleware.validate(emptyHandler{}))
+	http.Handle("/ping", cors.enable(authMiddleware.validate(pingHandler{})))
 	http.HandleFunc("/login", func(w http.ResponseWriter, r *http.Request) {
 		authHeader := r.Header.Get("Authorization")
 		if len(authHeader) < 7 || strings.ToLower(authHeader[:7]) != "bearer " {
@@ -69,27 +82,7 @@ func serve(config config) {
 		}
 		credentials := strings.Split(authHeader[7:], ":")
 
-		url := fmt.Sprintf("https://%s/oauth/token", config.authProviderDomain)
-		params := []string{
-			"grant_type=password",
-			"scope=read%3Asample",
-			fmt.Sprintf("username=%s", credentials[0]),
-			fmt.Sprintf("password=%s", credentials[1]),
-			fmt.Sprintf("audience=%s:%s", config.httpEndpoint, config.httpPort),
-			fmt.Sprintf("client_id=%s", config.authProviderClientID),
-			fmt.Sprintf("client_secret=%s", config.authProviderClientSecret),
-		}
-		payload := strings.NewReader(strings.Join(params, "&"))
-		req, err := http.NewRequest("POST", url, payload)
-		if err != nil {
-			log.Println(err.Error())
-			w.WriteHeader(http.StatusInternalServerError)
-			return
-		}
-
-		req.Header.Add("content-type", "application/x-www-form-urlencoded")
-
-		res, err := http.DefaultClient.Do(req)
+		resBody, err := authService.login(credentials[0], credentials[1])
 		if err != nil {
 			log.Println(err.Error())
 			w.WriteHeader(http.StatusInternalServerError)
@@ -97,7 +90,7 @@ func serve(config config) {
 		}
 
 		w.Header().Add("Content-Type", "application/json")
-		written, err := io.Copy(w, res.Body)
+		written, err := io.Copy(w, resBody)
 		if err != nil {
 			log.Println(err.Error())
 			w.WriteHeader(http.StatusInternalServerError)
@@ -112,6 +105,43 @@ func serve(config config) {
 		log.Fatal(err)
 	}
 
+}
+
+type authService interface {
+	login(username, password string) (io.ReadCloser, error)
+}
+
+type auth0 struct {
+	domain       string
+	audience     string
+	clientID     string
+	clientSecret string
+}
+
+func (a auth0) login(username, password string) (io.ReadCloser, error) {
+	url := fmt.Sprintf("https://%s/oauth/token", a.domain)
+	params := []string{
+		"grant_type=password",
+		"scope=read%3Asample",
+		fmt.Sprintf("username=%s", username),
+		fmt.Sprintf("password=%s", password),
+		fmt.Sprintf("audience=%s", a.audience),
+		fmt.Sprintf("client_id=%s", a.clientID),
+		fmt.Sprintf("client_secret=%s", a.clientSecret),
+	}
+	payload := strings.NewReader(strings.Join(params, "&"))
+	req, err := http.NewRequest("POST", url, payload)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("content-type", "application/x-www-form-urlencoded")
+	res, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+
+	return res.Body, nil
 }
 
 type pingHandler struct{}
