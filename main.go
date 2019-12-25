@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -9,15 +10,14 @@ import (
 	"strings"
 	"time"
 
+	"github.com/dgrijalva/jwt-go"
 	"github.com/s12v/go-jwks"
-	"github.com/square/go-jose"
 )
 
 type config struct {
 	httpPort                 string
 	httpEndpoint             string
 	jwksURI                  string
-	jwkID                    string
 	authProviderDomain       string
 	authProviderClientID     string
 	authProviderClientSecret string
@@ -29,7 +29,6 @@ func main() {
 		httpPort:                 os.Getenv("HTTP_PORT"),
 		httpEndpoint:             os.Getenv("HTTP_ENDPOINT"),
 		jwksURI:                  os.Getenv("JWKS_URI"),
-		jwkID:                    os.Getenv("JWK_ID"),
 		authProviderDomain:       os.Getenv("AUTH_PROVIDER_DOMAIN"),
 		authProviderClientID:     os.Getenv("AUTH_PROVIDER_CLIENT_ID"),
 		authProviderClientSecret: os.Getenv("AUTH_PROVIDER_CLIENT_SECRET"),
@@ -46,9 +45,17 @@ func serve(config config) {
 		12*time.Hour, // Expire keys after 12 hours
 	)
 
+	jwks, err := jwksSource.JSONWebKeySet()
+	if err != nil {
+		log.Fatal(err)
+	}
+	if len(jwks.Keys) < 1 {
+		log.Fatalf("got any key from jwks source %s", config.jwksURI)
+	}
+
 	auth := authenticationMiddleware{
 		jwksClient: jwksClient,
-		jwkID:      config.jwkID,
+		jwkID:      jwks.Keys[0].KeyID,
 	}
 	cors := corsMiddleware{}
 
@@ -100,7 +107,7 @@ func serve(config config) {
 		log.Printf("written %d bytes to response", written)
 	})
 
-	err := http.ListenAndServe(":"+config.httpPort, nil)
+	err = http.ListenAndServe(":"+config.httpPort, nil)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -129,13 +136,8 @@ func (m authenticationMiddleware) validate(next http.Handler) http.Handler {
 			w.WriteHeader(http.StatusUnauthorized)
 			return
 		}
+		bearerToken := authHeader[7:]
 
-		jws, err := jose.ParseSigned(authHeader[7:])
-		if err != nil {
-			w.WriteHeader(http.StatusInternalServerError)
-			log.Println(err.Error())
-			return
-		}
 		jwk, err := m.jwksClient.GetEncryptionKey(m.jwkID)
 		if err != nil {
 			w.WriteHeader(http.StatusInternalServerError)
@@ -143,7 +145,18 @@ func (m authenticationMiddleware) validate(next http.Handler) http.Handler {
 			return
 		}
 
-		if _, err := jws.Verify(jwk.Key); err != nil {
+		_, err = jwt.Parse(bearerToken, func(token *jwt.Token) (interface{}, error) {
+			if _, ok := token.Method.(*jwt.SigningMethodRSA); !ok {
+				return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
+			}
+			claims := token.Claims.(jwt.MapClaims)
+			if _, ok := claims["sub"].(string); !ok {
+				return nil, errors.New("missing sub claim")
+			}
+
+			return jwk.Key, nil
+		})
+		if err != nil {
 			w.WriteHeader(http.StatusUnauthorized)
 			w.Header().Add("Content-Type", "application/json")
 			fmt.Fprintf(w, `{"error":"%s"}`, err.Error())
