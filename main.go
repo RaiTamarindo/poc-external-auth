@@ -10,6 +10,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/RaiTamarindo/poc-external-auth/infra"
+	"github.com/RaiTamarindo/poc-external-auth/infra/auth0"
 	"github.com/dgrijalva/jwt-go"
 	"github.com/s12v/go-jwks"
 )
@@ -55,15 +57,15 @@ func serve(config config) {
 		log.Fatalf("got any key from jwks source %s", config.jwksURI)
 	}
 
-	var authService authService
+	var authService infra.AuthProvider
 	switch config.authProvider {
 	case "auth0":
-		authService = auth0{
-			domain:       config.authProviderDomain,
-			clientID:     config.authProviderClientID,
-			clientSecret: config.authProviderClientSecret,
-			audience:     fmt.Sprintf("%s:%s", config.httpEndpoint, config.httpPort),
-		}
+		authService = auth0.NewProvider(
+			config.authProviderDomain,
+			fmt.Sprintf("%s:%s", config.httpEndpoint, config.httpPort),
+			config.authProviderClientID,
+			config.authProviderClientSecret,
+		)
 	}
 
 	authMiddleware := authenticationMiddleware{
@@ -82,7 +84,7 @@ func serve(config config) {
 		}
 		credentials := strings.Split(authHeader[7:], ":")
 
-		resBody, err := authService.login(credentials[0], credentials[1])
+		resBody, err := authService.Login(credentials[0], credentials[1])
 		if err != nil {
 			log.Println(err.Error())
 			w.WriteHeader(http.StatusInternalServerError)
@@ -104,44 +106,6 @@ func serve(config config) {
 	if err != nil {
 		log.Fatal(err)
 	}
-
-}
-
-type authService interface {
-	login(username, password string) (io.ReadCloser, error)
-}
-
-type auth0 struct {
-	domain       string
-	audience     string
-	clientID     string
-	clientSecret string
-}
-
-func (a auth0) login(username, password string) (io.ReadCloser, error) {
-	url := fmt.Sprintf("https://%s/oauth/token", a.domain)
-	params := []string{
-		"grant_type=password",
-		"scope=read%3Asample",
-		fmt.Sprintf("username=%s", username),
-		fmt.Sprintf("password=%s", password),
-		fmt.Sprintf("audience=%s", a.audience),
-		fmt.Sprintf("client_id=%s", a.clientID),
-		fmt.Sprintf("client_secret=%s", a.clientSecret),
-	}
-	payload := strings.NewReader(strings.Join(params, "&"))
-	req, err := http.NewRequest("POST", url, payload)
-	if err != nil {
-		return nil, err
-	}
-
-	req.Header.Add("content-type", "application/x-www-form-urlencoded")
-	res, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return nil, err
-	}
-
-	return res.Body, nil
 }
 
 type pingHandler struct{}
