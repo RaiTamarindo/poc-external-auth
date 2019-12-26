@@ -2,7 +2,7 @@ package auth0
 
 import (
 	"fmt"
-	"io"
+	"io/ioutil"
 	"net/http"
 	"strings"
 )
@@ -26,7 +26,7 @@ func NewProvider(domain, audience, clientID, clientSecret string) Provider {
 }
 
 // Login ...
-func (a Provider) Login(username, password string) (io.ReadCloser, error) {
+func (a Provider) Login(username, password string) ([]byte, error) {
 	url := fmt.Sprintf("https://%s/oauth/token", a.domain)
 	params := []string{
 		"grant_type=password",
@@ -49,5 +49,5 @@ func (a Provider) Login(username, password string) (io.ReadCloser, error) {
 		return nil, err
 	}
 
-	return res.Body, nil
+	return ioutil.ReadAll(res.Body)
 }

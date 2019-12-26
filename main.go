@@ -3,7 +3,6 @@ package main
 import (
 	"errors"
 	"fmt"
-	"io"
 	"log"
 	"net/http"
 	"os"
@@ -104,14 +103,7 @@ func serve(config config) {
 		}
 
 		w.Header().Add("Content-Type", "application/json")
-		written, err := io.Copy(w, resBody)
-		if err != nil {
-			log.Println(err.Error())
-			w.WriteHeader(http.StatusInternalServerError)
-			return
-		}
-
-		log.Printf("written %d bytes to response", written)
+		fmt.Fprint(w, string(resBody))
 	})
 
 	err = http.ListenAndServe(":"+config.httpPort, nil)

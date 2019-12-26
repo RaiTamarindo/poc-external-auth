@@ -1,9 +1,6 @@
 package awscognito
 
 import (
-	"crypto/hmac"
-	"crypto/sha256"
-	"encoding/base64"
 	"encoding/json"
 	"strings"
 
@@ -50,10 +47,4 @@ func (p Provider) Login(username, password string) ([]byte, error) {
 	}
 
 	return json.Marshal(out.AuthenticationResult)
-}
-
-func (p Provider) signWithClientSecret(values ...string) string {
-	h := hmac.New(sha256.New, []byte(p.clientSecret))
-	h.Write([]byte(strings.Join(values, "")))
-	return base64.RawStdEncoding.EncodeToString(h.Sum(nil))
 }
