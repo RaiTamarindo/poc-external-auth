@@ -12,6 +12,7 @@ import (
 
 	"github.com/RaiTamarindo/poc-external-auth/infra"
 	"github.com/RaiTamarindo/poc-external-auth/infra/auth0"
+	"github.com/RaiTamarindo/poc-external-auth/infra/awscognito"
 	"github.com/dgrijalva/jwt-go"
 	"github.com/s12v/go-jwks"
 )
@@ -24,6 +25,8 @@ type config struct {
 	authProviderClientID     string
 	authProviderClientSecret string
 	jwksURI                  string
+	awsKeyID                 string
+	awsSecretKey             string
 }
 
 func main() {
@@ -36,6 +39,8 @@ func main() {
 		authProviderClientID:     os.Getenv("AUTH_PROVIDER_CLIENT_ID"),
 		authProviderClientSecret: os.Getenv("AUTH_PROVIDER_CLIENT_SECRET"),
 		jwksURI:                  os.Getenv("JWKS_URI"),
+		awsKeyID:                 os.Getenv("AWS_KEY_ID"),
+		awsSecretKey:             os.Getenv("AWS_SECRET_KEY"),
 	}
 
 	serve(config)
@@ -65,6 +70,13 @@ func serve(config config) {
 			fmt.Sprintf("%s:%s", config.httpEndpoint, config.httpPort),
 			config.authProviderClientID,
 			config.authProviderClientSecret,
+		)
+	case "awscognito":
+		authService = awscognito.NewProvider(
+			config.jwksURI,
+			config.awsKeyID,
+			config.awsSecretKey,
+			config.authProviderClientID,
 		)
 	}
 
