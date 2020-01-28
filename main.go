@@ -56,9 +56,11 @@ func serve(config config) {
 	jwks, err := jwksSource.JSONWebKeySet()
 	if err != nil {
 		log.Fatal(err)
+		os.Exit(1)
 	}
 	if len(jwks.Keys) < 1 {
 		log.Fatalf("got any key from jwks source %s", config.jwksURI)
+		os.Exit(1)
 	}
 
 	var authService infra.AuthProvider
@@ -81,7 +83,6 @@ func serve(config config) {
 
 	authMiddleware := authenticationMiddleware{
 		jwksClient: jwksClient,
-		jwkID:      jwks.Keys[0].KeyID,
 	}
 	cors := corsMiddleware{}
 
@@ -109,6 +110,7 @@ func serve(config config) {
 	err = http.ListenAndServe(":"+config.httpPort, nil)
 	if err != nil {
 		log.Fatal(err)
+		os.Exit(1)
 	}
 }
 
@@ -124,7 +126,6 @@ func (h emptyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {}
 
 type authenticationMiddleware struct {
 	jwksClient jwks.JWKSClient
-	jwkID      string
 }
 
 func (m authenticationMiddleware) validate(next http.Handler) http.Handler {
@@ -136,25 +137,34 @@ func (m authenticationMiddleware) validate(next http.Handler) http.Handler {
 		}
 		bearerToken := authHeader[7:]
 
-		jwk, err := m.jwksClient.GetEncryptionKey(m.jwkID)
-		if err != nil {
-			w.WriteHeader(http.StatusInternalServerError)
-			log.Println(err.Error())
-			return
-		}
-
-		_, err = jwt.Parse(bearerToken, func(token *jwt.Token) (interface{}, error) {
+		_, err := jwt.Parse(bearerToken, func(token *jwt.Token) (interface{}, error) {
 			if _, ok := token.Method.(*jwt.SigningMethodRSA); !ok {
 				return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
 			}
+
 			claims := token.Claims.(jwt.MapClaims)
 			if _, ok := claims["sub"].(string); !ok {
 				return nil, errors.New("missing sub claim")
 			}
 
+			k, ok := token.Header["kid"]
+			if !ok {
+				return nil, errors.New("missing kid header")
+			}
+			keyID, ok := k.(string)
+			if !ok {
+				return nil, errors.New("can't parse kid header")
+			}
+
+			jwk, err := m.jwksClient.GetEncryptionKey(keyID)
+			if err != nil {
+				return nil, err
+			}
+
 			return jwk.Key, nil
 		})
 		if err != nil {
+			log.Println(err.Error())
 			w.WriteHeader(http.StatusUnauthorized)
 			w.Header().Add("Content-Type", "application/json")
 			fmt.Fprintf(w, `{"error":"%s"}`, err.Error())
