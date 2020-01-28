@@ -2,6 +2,7 @@ package awscognito
 
 import (
 	"encoding/json"
+	"errors"
 	"strings"
 
 	"github.com/aws/aws-sdk-go/aws"
@@ -47,4 +48,9 @@ func (p Provider) Login(_, username, password string) ([]byte, error) {
 	}
 
 	return json.Marshal(out.AuthenticationResult)
+}
+
+// AddScopes ...
+func (a Provider) AddScopes(scopes []string) error {
+	return errors.New("not implemented")
 }

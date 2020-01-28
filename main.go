@@ -1,8 +1,10 @@
 package main
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
+	"io/ioutil"
 	"log"
 	"net/http"
 	"os"
@@ -15,6 +17,7 @@ import (
 	"github.com/RaiTamarindo/poc-external-auth/infra"
 	"github.com/RaiTamarindo/poc-external-auth/infra/auth0"
 	"github.com/RaiTamarindo/poc-external-auth/infra/awscognito"
+	"github.com/RaiTamarindo/poc-external-auth/infra/memorycache"
 )
 
 type config struct {
@@ -24,6 +27,7 @@ type config struct {
 	authProviderDomain       string
 	authProviderClientID     string
 	authProviderClientSecret string
+	authProviderAPIServerID  string
 	jwksURI                  string
 	awsKeyID                 string
 	awsSecretKey             string
@@ -38,6 +42,7 @@ func main() {
 		authProviderDomain:       os.Getenv("AUTH_PROVIDER_DOMAIN"),
 		authProviderClientID:     os.Getenv("AUTH_PROVIDER_CLIENT_ID"),
 		authProviderClientSecret: os.Getenv("AUTH_PROVIDER_CLIENT_SECRET"),
+		authProviderAPIServerID:  os.Getenv("AUTH_PROVIDER_API_SERVER_ID"),
 		jwksURI:                  os.Getenv("JWKS_URI"),
 		awsKeyID:                 os.Getenv("AWS_KEY_ID"),
 		awsSecretKey:             os.Getenv("AWS_SECRET_KEY"),
@@ -67,11 +72,14 @@ func serve(config config) {
 	var authService infra.AuthProvider
 	switch config.authProvider {
 	case "auth0":
+		cache := memorycache.NewClient(5*time.Minute, 10*time.Minute)
 		authService = auth0.NewProvider(
 			config.authProviderDomain,
 			fmt.Sprintf("%s:%s", config.httpEndpoint, config.httpPort),
 			config.authProviderClientID,
 			config.authProviderClientSecret,
+			config.authProviderAPIServerID,
+			cache,
 		)
 	case "awscognito":
 		authService = awscognito.NewProvider(
@@ -110,6 +118,34 @@ func serve(config config) {
 
 		w.Header().Add("Content-Type", "application/json")
 		fmt.Fprint(w, string(resBody))
+	})
+	http.HandleFunc("/scopes", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != "POST" {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+
+		raw, err := ioutil.ReadAll(r.Body)
+		if err != nil {
+			log.Println(err.Error())
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+
+		var scopes []string
+		err = json.Unmarshal(raw, &scopes)
+		if err != nil {
+			log.Println(err.Error())
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+
+		err = authService.AddScopes(scopes)
+		if err != nil {
+			log.Println(err.Error())
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
 	})
 
 	err = http.ListenAndServe(":"+config.httpPort, nil)
