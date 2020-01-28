@@ -26,11 +26,11 @@ func NewProvider(domain, audience, clientID, clientSecret string) Provider {
 }
 
 // Login ...
-func (a Provider) Login(username, password string) ([]byte, error) {
+func (a Provider) Login(scope, username, password string) ([]byte, error) {
 	url := fmt.Sprintf("https://%s/oauth/token", a.domain)
 	params := []string{
 		"grant_type=password",
-		"scope=read%3Asample",
+		fmt.Sprintf("scope=%s", scope),
 		fmt.Sprintf("username=%s", username),
 		fmt.Sprintf("password=%s", password),
 		fmt.Sprintf("audience=%s", a.audience),

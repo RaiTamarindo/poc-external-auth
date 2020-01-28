@@ -32,7 +32,7 @@ func NewProvider(jwksURI, awsKeyID, awsSecretKey, clientID string) Provider {
 }
 
 // Login ...
-func (p Provider) Login(username, password string) ([]byte, error) {
+func (p Provider) Login(_, username, password string) ([]byte, error) {
 	out, err := p.cognitoClient.AdminInitiateAuth(&cognitoidentityprovider.AdminInitiateAuthInput{
 		AuthFlow:   aws.String("ADMIN_USER_PASSWORD_AUTH"),
 		ClientId:   aws.String(p.clientID),

@@ -9,11 +9,12 @@ import (
 	"strings"
 	"time"
 
+	"github.com/dgrijalva/jwt-go"
+	"github.com/s12v/go-jwks"
+
 	"github.com/RaiTamarindo/poc-external-auth/infra"
 	"github.com/RaiTamarindo/poc-external-auth/infra/auth0"
 	"github.com/RaiTamarindo/poc-external-auth/infra/awscognito"
-	"github.com/dgrijalva/jwt-go"
-	"github.com/s12v/go-jwks"
 )
 
 type config struct {
@@ -95,8 +96,12 @@ func serve(config config) {
 			return
 		}
 		credentials := strings.Split(authHeader[7:], ":")
+		if len(credentials) < 3 {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
 
-		resBody, err := authService.Login(credentials[0], credentials[1])
+		resBody, err := authService.Login(credentials[0], credentials[1], credentials[2])
 		if err != nil {
 			log.Println(err.Error())
 			w.WriteHeader(http.StatusInternalServerError)
