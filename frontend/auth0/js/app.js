@@ -5,65 +5,65 @@ let auth0 = null;
  * Starts the authentication flow
  */
 const login = async (targetUrl) => {
-  try {
-    console.log("Logging in", targetUrl);
+    try {
+        console.log('Logging in', targetUrl);
 
-    const options = {
-      redirect_uri: window.location.origin
-    };
+        const options = {
+            redirect_uri: window.location.origin,
+        };
 
-    if (targetUrl) {
-      options.appState = { targetUrl };
+        if (targetUrl) {
+            options.appState = { targetUrl };
+        }
+
+        await auth0.loginWithRedirect(options);
+    } catch (err) {
+        console.log('Log in failed', err);
     }
-
-    await auth0.loginWithRedirect(options);
-  } catch (err) {
-    console.log("Log in failed", err);
-  }
 };
 
 /**
  * Executes the logout flow
  */
 const logout = () => {
-  try {
-    console.log("Logging out");
-    auth0.logout({
-      returnTo: window.location.origin
-    });
-  } catch (err) {
-    console.log("Log out failed", err);
-  }
+    try {
+        console.log('Logging out');
+        auth0.logout({
+            returnTo: window.location.origin,
+        });
+    } catch (err) {
+        console.log('Log out failed', err);
+    }
 };
 
 /**
  * Retrieves the auth configuration from the server
  */
 const fetchAuthConfig = async () => {
-  const response = await fetch("/auth_config.json");
-  return response.json();
-}
+    const response = await fetch('/auth_config.json');
+    return response.json();
+};
 
 let _config = null;
 const getConfig = async () => {
-  if (!_config) {
-    _config = await fetchAuthConfig();
-  }
+    if (!_config) {
+        _config = await fetchAuthConfig();
+    }
 
-  return _config;
-}
+    return _config;
+};
 
 /**
  * Initializes the Auth0 client
  */
 const configureClient = async () => {
-  const config = await getConfig();
+    const config = await getConfig();
 
-  auth0 = await createAuth0Client({
-    domain: config.domain,
-    client_id: config.clientId,
-    audience: config.audience
-  });
+    auth0 = await createAuth0Client({
+        domain: config.domain,
+        client_id: config.clientId,
+        audience: config.audience,
+    });
 };
 
 /**
@@ -72,99 +72,121 @@ const configureClient = async () => {
  * @param {*} fn The function to execute if the user is logged in
  */
 const requireAuth = async (fn, targetUrl) => {
-  const isAuthenticated = await auth0.isAuthenticated();
+    const isAuthenticated = await auth0.isAuthenticated();
 
-  if (isAuthenticated) {
-    return fn();
-  }
+    if (isAuthenticated) {
+        return fn();
+    }
 
-  return login(targetUrl);
+    return login(targetUrl);
+};
+
+const getToken = async () => {
+    let token = await auth0.getTokenSilently();
+    if (!token) {
+        throw new Error('cant get an access token');
+    }
+    const [provider] = token.split('|');
+    if (provider === 'auth0') {
+        return token;
+    }
+    // TODO decode token to get sub claim
+    const response = await fetch(`${config.audience}/link-user?sub=`, {
+        headers: {
+            Authorization: `Bearer ${token}`,
+        },
+    });
+    if (!response.ok) {
+        throw new Error('cant link de user');
+    }
+
+    return await auth0.getTokenSilently();
 };
 
 /**
  * Calls the API endpoint with an authorization token
  */
 const callApi = async () => {
-  try {
-    const config = await getConfig();
-    const token = await auth0.getTokenSilently();
+    try {
+        const config = await getConfig();
+        const token = await getToken();
 
-    const response = await fetch(`${config.audience}/ping`, {
-      headers: {
-        Authorization: `Bearer ${token}`
-      }
-    });
+        const response = await fetch(`${config.audience}/ping`, {
+            headers: {
+                Authorization: `Bearer ${token}`,
+            },
+        });
 
-    const responseData = await response.json();
-    const responseElement = document.getElementById("api-call-result");
+        const responseData = await response.json();
+        const responseElement = document.getElementById('api-call-result');
 
-    responseElement.innerText = JSON.stringify(responseData, {}, 2);
+        responseElement.innerText = JSON.stringify(responseData, {}, 2);
 
-    document.querySelectorAll("pre code").forEach(hljs.highlightBlock);
+        document.querySelectorAll('pre code').forEach(hljs.highlightBlock);
 
-    eachElement(".result-block", (c) => c.classList.add("show"));
-  } catch (e) {
-    console.error(e);
-  }
+        eachElement('.result-block', (c) => c.classList.add('show'));
+    } catch (e) {
+        console.error(e);
+    }
 };
 
 // Will run when page finishes loading
 window.onload = async () => {
-  await configureClient();
+    await configureClient();
 
-  // If unable to parse the history hash, default to the root URL
-  if (!showContentFromUrl(window.location.pathname)) {
-    showContentFromUrl("/");
-    window.history.replaceState({ url: "/" }, {}, "/");
-  }
-
-  const bodyElement = document.getElementsByTagName("body")[0];
-
-  // Listen out for clicks on any hyperlink that navigates to a #/ URL
-  bodyElement.addEventListener("click", (e) => {
-    if (isRouteLink(e.target)) {
-      const url = e.target.getAttribute("href");
-
-      if (showContentFromUrl(url)) {
-        e.preventDefault();
-        window.history.pushState({ url }, {}, url);
-      }
-    } else if (e.target.getAttribute("id") === "call-api") {
-      e.preventDefault();
-      callApi();
+    // If unable to parse the history hash, default to the root URL
+    if (!showContentFromUrl(window.location.pathname)) {
+        showContentFromUrl('/');
+        window.history.replaceState({ url: '/' }, {}, '/');
     }
-  });
 
-  const isAuthenticated = await auth0.isAuthenticated();
+    const bodyElement = document.getElementsByTagName('body')[0];
 
-  if (isAuthenticated) {
-    console.log("> User is authenticated");
-    window.history.replaceState({}, document.title, window.location.pathname);
+    // Listen out for clicks on any hyperlink that navigates to a #/ URL
+    bodyElement.addEventListener('click', (e) => {
+        if (isRouteLink(e.target)) {
+            const url = e.target.getAttribute('href');
+
+            if (showContentFromUrl(url)) {
+                e.preventDefault();
+                window.history.pushState({ url }, {}, url);
+            }
+        } else if (e.target.getAttribute('id') === 'call-api') {
+            e.preventDefault();
+            callApi();
+        }
+    });
+
+    const isAuthenticated = await auth0.isAuthenticated();
+
+    if (isAuthenticated) {
+        console.log('> User is authenticated');
+        window.history.replaceState({}, document.title, window.location.pathname);
+        updateUI();
+        return;
+    }
+
+    console.log('> User not authenticated');
+
+    const query = window.location.search;
+    const shouldParseResult = query.includes('code=') && query.includes('state=');
+
+    if (shouldParseResult) {
+        console.log('> Parsing redirect');
+        try {
+            const result = await auth0.handleRedirectCallback();
+
+            if (result.appState && result.appState.targetUrl) {
+                showContentFromUrl(result.appState.targetUrl);
+            }
+
+            console.log('Logged in!');
+        } catch (err) {
+            console.log('Error parsing redirect:', err);
+        }
+
+        window.history.replaceState({}, document.title, '/');
+    }
+
     updateUI();
-    return;
-  }
-
-  console.log("> User not authenticated");
-
-  const query = window.location.search;
-  const shouldParseResult = query.includes("code=") && query.includes("state=");
-
-  if (shouldParseResult) {
-    console.log("> Parsing redirect");
-    try {
-      const result = await auth0.handleRedirectCallback();
-
-      if (result.appState && result.appState.targetUrl) {
-        showContentFromUrl(result.appState.targetUrl);
-      }
-
-      console.log("Logged in!");
-    } catch (err) {
-      console.log("Error parsing redirect:", err);
-    }
-
-    window.history.replaceState({}, document.title, "/");
-  }
-
-  updateUI();
 };

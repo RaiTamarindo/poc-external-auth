@@ -6,6 +6,15 @@ import "time"
 type AuthProvider interface {
 	Login(scope, username, password string) ([]byte, error)
 	AddScopes(scopes []string) error
+	GetUser(userID, userProvider string) (User, error)
+	LinkUser(primaryUserID, primaryUserProvider, secondaryUserID, secondaryUserProvider string) error
+}
+
+// User ...
+type User struct {
+	ID       string `json:"user_id"`
+	Email    string `json:"email"`
+	Username string `json:"username"`
 }
 
 // CacheProvider ...

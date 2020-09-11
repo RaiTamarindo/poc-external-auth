@@ -5,6 +5,7 @@ import (
 	"errors"
 	"strings"
 
+	"github.com/RaiTamarindo/poc-external-auth/infra"
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/credentials"
 	"github.com/aws/aws-sdk-go/aws/session"
@@ -51,6 +52,16 @@ func (p Provider) Login(_, username, password string) ([]byte, error) {
 }
 
 // AddScopes ...
-func (a Provider) AddScopes(scopes []string) error {
+func (p Provider) AddScopes(scopes []string) error {
 	return errors.New("not implemented")
+}
+
+// GetUser ...
+func (p Provider) GetUser(userID, userProvider string) (infra.User, error) {
+	return infra.User{}, errors.New("unimplemented method")
+}
+
+// LinkUser ...
+func (p Provider) LinkUser(primaryUserID, primaryUserProvider, secondaryUserID, secondaryUserProvider string) error {
+	return errors.New("unimplemented method")
 }

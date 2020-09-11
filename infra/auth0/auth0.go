@@ -55,6 +55,75 @@ func (a Provider) Login(scope, username, password string) ([]byte, error) {
 	return ioutil.ReadAll(res.Body)
 }
 
+// GetUser ...
+func (a Provider) GetUser(userID, userProvider string) (infra.User, error) {
+	empty := infra.User{}
+	jwt, err := a.getManagementToken()
+	if err != nil {
+		return empty, err
+	}
+
+	u := fmt.Sprintf("%s/users/%s|%s", a.managementAPIBaseURL, userProvider, userID)
+	req, err := http.NewRequest("POST", u, nil)
+	if err != nil {
+		return empty, err
+	}
+
+	req.Header.Set("Authorization", "Bearer "+jwt)
+	res, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return empty, err
+	}
+
+	if res.StatusCode >= http.StatusBadRequest {
+		return empty, errors.New("error on linking users")
+	}
+
+	raw, err := ioutil.ReadAll(res.Body)
+	if err != nil {
+		return empty, err
+	}
+
+	var user infra.User
+	err = json.Unmarshal(raw, &user)
+
+	return user, err
+}
+
+// LinkUser ...
+func (a Provider) LinkUser(primaryUserID, primaryUserProvider, secondaryUserID, secondaryUserProvider string) error {
+	jwt, err := a.getManagementToken()
+	if err != nil {
+		return err
+	}
+
+	body, err := json.Marshal(map[string]string{
+		"provider": secondaryUserProvider,
+		"user_id":  secondaryUserID,
+	})
+	if err != nil {
+		return err
+	}
+
+	u := fmt.Sprintf("%s/users/%s|%s/identities", a.managementAPIBaseURL, primaryUserProvider, primaryUserID)
+	req, err := http.NewRequest("POST", u, bytes.NewReader(body))
+	if err != nil {
+		return err
+	}
+
+	req.Header.Set("Authorization", "Bearer "+jwt)
+	res, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return err
+	}
+
+	if res.StatusCode >= http.StatusBadRequest {
+		return errors.New("error on linking users")
+	}
+
+	return nil
+}
+
 type apiScope struct {
 	Value       string `json:"value"`
 	Description string `json:"description"`
