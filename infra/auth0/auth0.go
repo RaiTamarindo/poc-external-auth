@@ -64,7 +64,7 @@ func (a Provider) GetUser(userID, userProvider string) (infra.User, error) {
 	}
 
 	u := fmt.Sprintf("%s/users/%s|%s", a.managementAPIBaseURL, userProvider, userID)
-	req, err := http.NewRequest("POST", u, nil)
+	req, err := http.NewRequest("GET", u, nil)
 	if err != nil {
 		return empty, err
 	}
@@ -76,7 +76,8 @@ func (a Provider) GetUser(userID, userProvider string) (infra.User, error) {
 	}
 
 	if res.StatusCode >= http.StatusBadRequest {
-		return empty, errors.New("error on linking users")
+		rawBody, _ := ioutil.ReadAll(res.Body)
+		return empty, fmt.Errorf("[url=%s] error on linking users: %d: %s", u, res.StatusCode, string(rawBody))
 	}
 
 	raw, err := ioutil.ReadAll(res.Body)
@@ -111,6 +112,7 @@ func (a Provider) LinkUser(primaryUserID, primaryUserProvider, secondaryUserID, 
 		return err
 	}
 
+	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+jwt)
 	res, err := http.DefaultClient.Do(req)
 	if err != nil {
@@ -118,7 +120,8 @@ func (a Provider) LinkUser(primaryUserID, primaryUserProvider, secondaryUserID, 
 	}
 
 	if res.StatusCode >= http.StatusBadRequest {
-		return errors.New("error on linking users")
+		rawBody, _ := ioutil.ReadAll(res.Body)
+		return fmt.Errorf("[url=%s] error on linking users: %d: %s", u, res.StatusCode, string(rawBody))
 	}
 
 	return nil
@@ -208,7 +211,7 @@ func (a Provider) getManagementToken() (string, error) {
 
 	params := []string{
 		"grant_type=client_credentials",
-		fmt.Sprintf("audience=%s", a.managementAPIBaseURL),
+		fmt.Sprintf("audience=%s/", a.managementAPIBaseURL),
 	}
 
 	res, err := a.requestToken(params)

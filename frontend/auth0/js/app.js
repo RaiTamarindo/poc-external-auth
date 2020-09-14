@@ -81,17 +81,18 @@ const requireAuth = async (fn, targetUrl) => {
     return login(targetUrl);
 };
 
-const getToken = async () => {
+const getToken = async (config) => {
     let token = await auth0.getTokenSilently();
     if (!token) {
         throw new Error('cant get an access token');
     }
-    const [provider] = token.split('|');
+    const [_, payload] = token.split('.');
+    const claims = JSON.parse(atob(payload));
+    const [provider] = claims.sub.split('|');
     if (provider === 'auth0') {
         return token;
     }
-    // TODO decode token to get sub claim
-    const response = await fetch(`${config.audience}/link-user?sub=`, {
+    const response = await fetch(`${config.audience}/link-user?sub=${claims.sub}`, {
         headers: {
             Authorization: `Bearer ${token}`,
         },
@@ -109,7 +110,7 @@ const getToken = async () => {
 const callApi = async () => {
     try {
         const config = await getConfig();
-        const token = await getToken();
+        const token = await getToken(config);
 
         const response = await fetch(`${config.audience}/ping`, {
             headers: {

@@ -97,6 +97,12 @@ func serve(config config) {
 
 	http.Handle("/validate", authMiddleware.validate(emptyHandler{}))
 	http.Handle("/ping", cors.enable(authMiddleware.validate(pingHandler{})))
+	http.Handle("/link-user", cors.enable(authMiddleware.validate(linkUserHandler{
+		authService: authService,
+		IDByEmail: map[string]string{
+			"raybatera_@outlook.com": "my-internal-identifier-3",
+		},
+	})))
 	http.HandleFunc("/login", func(w http.ResponseWriter, r *http.Request) {
 		authHeader := r.Header.Get("Authorization")
 		if len(authHeader) < 7 || strings.ToLower(authHeader[:7]) != "bearer " {
@@ -147,37 +153,6 @@ func serve(config config) {
 			return
 		}
 	})
-	idByEmail := map[string]string{
-		"raybatera_@outlook.com": "my-internal-identifier-3",
-	}
-	http.HandleFunc("/link-user", func(w http.ResponseWriter, r *http.Request) {
-		sub := r.URL.Query().Get("sub")
-		subParts := strings.Split(sub, "|")
-		if len(subParts) < 2 {
-			log.Println("invalid sub claim")
-			w.WriteHeader(http.StatusBadRequest)
-			return
-		}
-
-		secondaryUserProvider := subParts[0]
-		secondaryUserID := subParts[1]
-
-		secondaryUser, err := authService.GetUser(secondaryUserID, secondaryUserProvider)
-		if err != nil {
-			log.Println(err.Error())
-			w.WriteHeader(http.StatusNotFound)
-			return
-		}
-
-		primaryUserID := idByEmail[secondaryUser.Email]
-
-		err = authService.LinkUser(primaryUserID, "auth0", secondaryUserID, secondaryUserProvider)
-		if err != nil {
-			log.Println(err.Error())
-			w.WriteHeader(http.StatusNotFound)
-			return
-		}
-	})
 
 	err = http.ListenAndServe(":"+config.httpPort, nil)
 	if err != nil {
@@ -190,6 +165,40 @@ type pingHandler struct{}
 
 func (h pingHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintf(w, `{"timestamp":%d,"message":"pong"}`, time.Now().Unix())
+}
+
+type linkUserHandler struct {
+	authService infra.AuthProvider
+	IDByEmail   map[string]string
+}
+
+func (h linkUserHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	sub := r.URL.Query().Get("sub")
+	subParts := strings.Split(sub, "|")
+	if len(subParts) < 2 {
+		log.Println("invalid sub claim")
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+
+	secondaryUserProvider := subParts[0]
+	secondaryUserID := subParts[1]
+
+	secondaryUser, err := h.authService.GetUser(secondaryUserID, secondaryUserProvider)
+	if err != nil {
+		log.Println(err.Error())
+		w.WriteHeader(http.StatusNotFound)
+		return
+	}
+
+	primaryUserID := h.IDByEmail[secondaryUser.Email]
+
+	err = h.authService.LinkUser(primaryUserID, "auth0", secondaryUserID, secondaryUserProvider)
+	if err != nil {
+		log.Println(err.Error())
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
 }
 
 type emptyHandler struct{}
@@ -252,8 +261,8 @@ type corsMiddleware struct{}
 func (m corsMiddleware) enable(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Add("Access-Control-Allow-Origin", "*")
-		w.Header().Add("Access-Control-Allow-Methods", "DELETE, POST, GET, OPTIONS")
-		w.Header().Add("Access-Control-Allow-Headers", "Content-Type, Access-Control-Allow-Headers, Authorization, X-Requested-With")
+		w.Header().Add("Access-Control-Allow-Methods", "*")
+		w.Header().Add("Access-Control-Allow-Headers", "*")
 
 		if r.Method == "OPTIONS" {
 			w.WriteHeader(http.StatusOK)
